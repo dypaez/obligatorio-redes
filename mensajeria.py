@@ -1,5 +1,8 @@
 import socket
+import threading
+import datetime
 import sys
+import signal
 if len(sys.argv) < 4:
     print("ERROR: Argumentos insuficientes.")
     sys.exit(1)
@@ -18,3 +21,11 @@ def recibir(socket_cliente, buffer):
         if "\r\n" in buffer:
             break
     return buffer
+
+def cerrar(senial, frame):
+    print("Señal recibida: {senial}")
+    print("Terminando el programa...")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, cerrar)
+signal.signal(signal.SIGTERM, cerrar)
