@@ -12,15 +12,18 @@ ipAuth = sys.argv[2]
 portAuth = sys.argv[3]
 
 
-//autenticacion con ecriptamiento
-//socket bind listen TCP
-//threading
-//manejar mensajes de usuario en terminal segun
-//mensaje a otro, mensaje a todos*, file transfer a otro, filetransfer a todos*
-//file transfer
+#aAutenticacion con ecriptamiento
+#socket bind listen TCP
+#threading
+#manejar mensajes de usuario en terminal segun
+#mensaje a otro, mensaje a todos*, file transfer a otro, filetransfer a todos*
+#file transfer
 
 def enviar(socket_cliente, mensaje):
-    //connect?
+    #connect?
+    #Nota: creo que el connect deberíamos hacerlo en otra función para preservar la simplicidad
+    #de las funciones, además de hacer más fácil el bug. Si falla algo, que sea una función específica
+    #en vez de una macro función que abarque múltiples cosas. -Dami
     socket_cliente.send(mensaje.encode('utf-8'))
 
 def recibir(socket_cliente, buffer):
@@ -31,10 +34,10 @@ def recibir(socket_cliente, buffer):
             break
     return buffer
 
-def cerrar(senial, frame):
+def handlerCierre(senial, frame):
     print("Señal recibida: {senial}")
     print("Terminando el programa...")
     sys.exit(0)
 
-signal.signal(signal.SIGINT, cerrar)
-signal.signal(signal.SIGTERM, cerrar)
+signal.signal(signal.SIGINT, handlerCierre)
+signal.signal(signal.SIGTERM, handlerCierre)
