@@ -1,0 +1,1 @@
+En este repositorio se almacenarán archivos de código fuente del obligatorio 1 de Redes.
