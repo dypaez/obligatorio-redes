@@ -6,7 +6,7 @@ ipAuth = sys.argv[2]
 portAuth = sys.argv[3]
 
 def enviar(socket_cliente, mensaje):
-    socket_cliente.send(msg.encode('utf-8'))
+    socket_cliente.send(mensaje.encode('utf-8'))
 
 def recibir(socket_cliente, buffer):
     while True:
