@@ -1,5 +1,8 @@
 import socket
 import sys
+if len(sys.argv) < 4:
+    print("ERROR: Argumentos insuficientes.")
+    sys.exit(1)
 MAX_LARGO_MENSAJE = 255
 port = sys.argv[1]
 ipAuth = sys.argv[2]
