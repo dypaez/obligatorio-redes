@@ -1,6 +1,6 @@
 import socket
 import threading
-import datetime
+from datetime import datetime
 import sys
 import signal
 if len(sys.argv) < 4:
@@ -11,7 +11,16 @@ port = sys.argv[1]
 ipAuth = sys.argv[2]
 portAuth = sys.argv[3]
 
+
+//autenticacion con ecriptamiento
+//socket bind listen TCP
+//threading
+//manejar mensajes de usuario en terminal segun
+//mensaje a otro, mensaje a todos*, file transfer a otro, filetransfer a todos*
+//file transfer
+
 def enviar(socket_cliente, mensaje):
+    //connect?
     socket_cliente.send(mensaje.encode('utf-8'))
 
 def recibir(socket_cliente, buffer):
