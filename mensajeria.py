@@ -5,6 +5,11 @@ import sys
 import signal
 import hashlib
 import os
+
+#-Matías Acuña 5.639.240-5
+#-Bruno Ferraro 5.418.881-4
+#-Damián Páez 5.135.346-8
+
 if len(sys.argv) < 4:
     print("ERROR: Argumentos insuficientes.")
     sys.exit(1)
@@ -12,6 +17,7 @@ MAX_LARGO_MENSAJE = 255
 port = int(sys.argv[1])
 ipAuth = sys.argv[2]
 portAuth = int(sys.argv[3])
+ips_conocidas = set()
 
 def autenticar(ip_auth, port_auth, usuario):
     sock=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -39,17 +45,6 @@ def autenticar(ip_auth, port_auth, usuario):
     sock.close()
     return None
     
-#crear socket cliente, 
-#conectarse a ipAuth:portAuth
-#leer banner inicial del auth
-#calcular md5(clave)
-#mandar usuario-md5(clave)
-#leer respuesta
-#si SI, leer/devolver nombre completo
-#si NO, devolver None
-#cerrar socket
-
-#receptor
 
 def iniciar_receptor(port):
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -57,38 +52,59 @@ def iniciar_receptor(port):
     server_sock.bind(("", port))
     server_sock.listen()
     return server_sock
-#crear socket TCP
-#setsockopt reuseaddr
-#bind(("0.0.0.0" o "", port_local) o bind(("127.0.0.1", port_local)) según prueba
-#listen()
-#devolver server_socket
+
 
 def loop_receptor(server_sock):
     while True:
         conn, addr = server_sock.accept()
         th = threading.Thread(target=handle_incoming, args=(conn, addr))
         th.start()
-#while programa_activo:
-#conn, addr = server_socket.accept()
-#crear thread para handle_incoming(conn, addr)
 
 def handle_incoming(conn, addr):
     msj = leer_linea_crlf(conn)
     if msj is None:
          conn.close()
          return
-    msj = msj.decode("utf-8").strip()
     fecha = datetime.now().strftime("[%Y.%m.%d %H:%M]")
-    print(f"{fecha} {addr[0]} {msj}")
+    msj = msj.decode("utf-8").strip()
+    if msj.startswith("MSG"):
+        partes = msj.split(" ", 2)
+        if len(partes) < 3:
+            print("Mensaje invalido")
+            conn.close()
+            return
+    else:
+        partes = msj.split(" ", 3)
+        if len(partes) < 4:
+            print("Mensaje invalido")
+            conn.close()
+            return
+    ips_conocidas.add(addr[0])
+    if partes[0] == "MSG":
+        print(f"{fecha} {addr[0]} {partes[1]} dice: {partes[2]}")
+    elif partes[0] == "FILE":
+        usuario = partes[1]
+        nombre = partes[2]
+        try:
+            tamanio = int(partes[3])
+        except ValueError:
+             print("Tamaño de archivo invalido")
+             conn.close()
+             return
+        contenido = leer_exactamente(conn, tamanio)
+        if contenido is None:
+            print(f"{fecha} {addr[0]} <Error Recibiendo Archivo de {usuario}>")
+            conn.close()
+            return 
+        else:
+            archivo = open(nombre, "wb")
+            archivo.write(contenido)
+            archivo.close()
+        print(f"{fecha} {addr[0]} <Recibido ./{nombre} de {usuario}>")
+    else:
+        print ("Tipo de mensaje invalido")
     conn.close()
-#leer lo que llega por conn
-#decidir si es mensaje o archivo
-#si es mensaje: imprimir fecha, ip, usuario, dice, mensaje
-#si es archivo: guardar archivo en directorio actual
-#si hay error de archivo: imprimir error
-#cerrar conn
 
-#emisor
 
 def loop_emisor(usuario, port_destino_default):
     while True:
@@ -96,114 +112,154 @@ def loop_emisor(usuario, port_destino_default):
         resultado = parsear_entrada(linea)
         if resultado is None:
             continue
-        destino, mensaje = resultado
-        enviar_mensaje(destino, port_destino_default, usuario, mensaje)
-#leer líneas de stdin
-#llamar parsear_entrada(linea)
-#según el tipo, llamar enviar_mensaje o enviar_archivo
-#si es broadcast, resolver destinos y mandar a varios
+        tipo, destino, contenido = resultado
+        if tipo == "MSG":
+            destino_r = resolver_destino(destino)
+            if destino_r is None:
+                continue
+            ips_conocidas.add(destino_r)
+            enviar_mensaje(destino_r, port_destino_default, usuario, contenido)
+        elif tipo == "FILE":
+            destino_r = resolver_destino(destino)
+            if destino_r is None:
+                continue
+            ips_conocidas.add(destino_r)
+            enviar_archivo(destino_r, port_destino_default, usuario, contenido)
+        elif tipo == "BROADCAST_MSG":
+            ips = resolver_broadcast()
+            for ip in ips:
+                enviar_mensaje(ip, port_destino_default, usuario, contenido)
+        elif tipo == "BROADCAST_FILE":
+            ips = resolver_broadcast()
+            for ip in ips:
+                enviar_archivo(ip, port_destino_default, usuario, contenido)
+        else:
+            print("Tipo de entrada invalido")
 
 def parsear_entrada(linea):
     linea = linea.strip()
     partes = linea.split(" ", 1)
+
     if len(partes) < 2:
         print("Entrada invalida")
         return None
-    if partes[1] == "":
-        print("Entrada invalida")
-        return None
+
     destino = partes[0]
-    if destino == "":
+    resto = partes[1].strip()
+
+    if destino == "" or resto == "":
         print("Entrada invalida")
         return None
-    mensaje = partes[1]
-    return destino, mensaje
-#distinguir estos casos:
 
-#192.168.33.15 Feliz Cumple!!!!!
-#tecnoinf315.esi.edu.uy Feliz Cumple!!!!!
-#tecnoinf315 Feliz Cumple!!!!!
+    if resto.startswith("&file "):
+        path = resto[6:].strip()
 
-#* Gracias a todos
+        if path == "":
+            print("Entrada invalida")
+            return None
 
-#192.168.33.15 &file ./foto.jpg
-#tecnoinf315 &file ./foto.jpg
-#* &file ./foto.jpg
+        if destino == "*":
+            tipo = "BROADCAST_FILE"
+        else:
+            tipo = "FILE"
 
-#salida conceptual
-#tipo: MSG_DIRECTO / MSG_BROADCAST / FILE_DIRECTO / FILE_BROADCAST
-#destino: ip/host/*
-#contenido: mensaje o path
+        contenido = path
+
+    else:
+        if destino == "*":
+            tipo = "BROADCAST_MSG"
+        else:
+            tipo = "MSG"
+
+        contenido = resto
+
+    return tipo, destino, contenido
 
 def resolver_destino(destino):
-    pass
-#si destino es IP, usarlo
-#si destino es hostname, resolverlo
+    try:
+        ip = socket.gethostbyname(destino)
+        return ip
+    except socket.gaierror:
+        print("No se pudo resolver destino")
+        return None
+
 
 def enviar_mensaje(ip_destino, port_destino, usuario, mensaje):
     msjby= mensaje.encode("utf-8")
     if len(msjby) > MAX_LARGO_MENSAJE:
         print("Tamaño de mensaje excedido")
         return None
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((ip_destino, port_destino))
-    paquete = mensaje + "\r\n"
-    sock.sendall(paquete.encode("utf-8"))
-    sock.close()
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((ip_destino, port_destino))
+        paquete = armar_header_msg(usuario, msjby)
+        sock.sendall(paquete)
+        sock.close()
+    except OSError as e:
+        print(f"Error enviando a {ip_destino}:{port_destino}: {e}")
+        return None
 
-#validar largo <= 255
-#crear socket cliente
-#connect(ip_destino, port_destino)
-#armar paquete de mensaje
-#sendall(paquete)
-#close
 
 def enviar_archivo(ip_destino, port_destino, usuario, path):
-    pass
-#verificar que el archivo exista
-#obtener nombre del archivo
-#obtener tamaño
-#abrir archivo en modo binario
-#crear socket cliente
-#connect
-#mandar header de archivo
-#mandar bytes del archivo
-#close
+    if not os.path.exists(path):
+        print ("El archivo no existe o la ruta es incorrecta")
+        return None
+    nombre = os.path.basename(path)
+    tamanio = os.path.getsize(path)
+    archivo = open(path, "rb")
+    contenido = archivo.read()
+    archivo.close()
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((ip_destino, port_destino))
+        header = armar_header_file(usuario, nombre, tamanio)
+        sock.sendall(header)
+        sock.sendall(contenido)
+        sock.close()
+    except OSError as e:
+        print(f"Error enviando archivo a {ip_destino}:{port_destino}: {e}")
+        return None
+
 
 def leer_linea_crlf(sock):
     buffer =b""
     while b"\r\n" not in buffer:
-        chunk = sock.recv(1024)
+        chunk = sock.recv(1)
         if chunk == b"":
-            return None
-            
+            return None    
         buffer = buffer + chunk
     return buffer 
-#recibir bytes hasta encontrar b"\r\n"
-#devolver la línea sin perder datos
+
 
 def leer_exactamente(sock, cantidad):
-    pass
-#seguir haciendo recv hasta juntar exactamente cantidad bytes
-#si recv devuelve b"", significa conexión cerrada antes de tiempo   
+    buffer = b""
+    while len(buffer) < cantidad:
+        chunk = sock.recv(cantidad - len(buffer))
+        if chunk == b"":
+            return None
+        buffer = buffer + chunk
+    return buffer
+  
 
 def armar_header_msg(usuario, mensaje_bytes):
-    pass
-#crear b"MSG usuario largo\r\n"    
+    msj = mensaje_bytes.decode("utf-8")
+    h = f"MSG {usuario} {msj}\r\n"
+    return h.encode("utf-8")
+   
 
-def armar_header_file(usuario, nombre_archivo, tamaño):
-    pass
-#crear b"FILE usuario nombre_archivo tamaño\r\n"
+def armar_header_file(usuario, nombre_archivo, tamanio):
+    h = f"FILE {usuario} {nombre_archivo} {tamanio}\r\n"
+    return h.encode("utf-8")
+
 
 def resolver_broadcast():
-    pass
-#consigue todas las ips con las que se hizo coneccion
+    return list(ips_conocidas)
+
 
 def handlerCierre(senial, frame):
     print(f"Señal recibida: {senial}")
     print("Terminando el programa...")
-#marcar programa como inactivo
-#cerrar sockets abiertos si los tenés guardados
+
     sys.exit(0)
     
 def main():
@@ -215,7 +271,7 @@ def main():
         sys.exit(1)
     print(f"Bienvenido {nombre}")
     server_sock = iniciar_receptor(port)
-    th_receptor = threading.Thread(target=loop_receptor, args=(server_sock,))
+    th_receptor = threading.Thread(target=loop_receptor, args=(server_sock,), daemon=True)
     th_receptor.start()
     print(f"Receptor escuchando en puerto {port}")
     loop_emisor(usuario, port)
@@ -225,30 +281,6 @@ def main():
 
 signal.signal(signal.SIGINT, handlerCierre)
 signal.signal(signal.SIGTERM, handlerCierre)
-
-# Estado actual:
-
-# - autenticacion contra redes-auth funcionando
-# - receptor TCP levanta bien en el puerto pasado por parametro
-# - receptor queda corriendo en thread
-# - acepta conexiones y muestra mensajes terminados en CRLF
-# - emisor minimo funciona para mandar mensaje directo
-# - parseo basico: destino + mensaje
-
-# Falta:
-
-# - armar protocolo real MSG con usuario y largo
-# - que el receptor imprima: ip usuario dice: mensaje
-# - resolver hostnames con socket.gethostbyname
-# - soportar ip:puerto solo para pruebas locales, si hace falta
-# - implementar FILE directo
-# - implementar leer_exactamente para archivos
-# - implementar headers FILE usuario nombre tamanio
-# - broadcast liviano usando ips conocidas de la sesion
-# - broadcast de archivos
-# - manejar errores de conexion sin que explote todo
-# - cierre limpio: cerrar server_sock y cortar threads si se puede
-# - limpiar comentarios viejos cuando ya este funcionando
 
 
 if __name__ == "__main__":
